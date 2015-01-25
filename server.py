@@ -2,9 +2,24 @@
 import socket
 import struct
 import sys
+import time
 
 
 class Config(object):
+    
+    """
+    Configuration settings.
+
+    Various constants used for the adhoc server connection.
+
+    Steps to a valid and stable connection:
+    1. Login Packet
+    2. Ping Packet
+    3. Network Scan Packet
+    4. Ping Packet
+    TODO: Figure out the rest
+    """
+
     PORT = 27312
     # Packet Types
     PACKET_PING = 0x0
@@ -35,10 +50,9 @@ def main():
     sock.listen(1)
     # Wait for a connection
     print "Waiting for a connection on port {}".format(Config.PORT)
-    connection, client_address = sock.accept()
     try:
+        connection, client_address = sock.accept()
         # TODO: Validate this connection
-        print "New connection from {}".format(client_address)
         packet = connection.recv(1024)
         # TODO: Check for closed connection/timeout/interrupt
         packet_size = len(packet)
@@ -79,8 +93,57 @@ def main():
                     i = i + 1;
                 # Extract the Product Code
                 productcode = struct.unpack('!9s', packet[135:144])[0]
-                # All went good, let the admin know about the connection
-                print "{} (MAC: {} - IP: {}) started playing {}.".format(username, macaddress, client_address[0], productcode)
+                # Add the user to the connection
+                if macaddress in Config.USERS:
+                    print "Mac Address is already connected."
+                    print "If using ppsspp try using a different MAC."
+                else:
+                    # All went good, let the admin know about the connection
+                    print "{} (MAC: {} - IP: {}) started playing {}.".format(username, macaddress, client_address[0], productcode)
+                    # Add the user to the list
+                    Config.USERS[macaddress] = {'nickname': username, 
+                    'product': productcode, 'ipaddress': client_address[0],
+                    'socket': connection, 'timeout': int(time.time())}
+            # FIXME: Read in next 10 packets; Debug style (yuck)
+            for i in range(0, 10):
+                for macaddress in Config.USERS:
+                    # TODO: Add a check to make sure the user logs in before doing this logic
+                    # TODO: Cycle for each connected user
+                    user = Config.USERS[macaddress]
+                    packet = user['socket'].recv(1024)
+                    if len(packet) > 0:
+                        # TODO: Update the timeout clock for the connected user.
+                        # Extract the packet opcode
+                        opcode = struct.unpack('!B', packet[0])[0]
+                        if opcode == Config.PACKET_PING:
+                            print "Ping Packet"
+                            # Update the timeout timer
+                            user['timeout'] = int(time.time())
+                        elif opcode == Config.PACKET_CONNECT:
+                            # TODO: Check for Group Connect packet
+                            print "Group Connect Packet"  
+                        elif opcode == Config.PACKET_DISCONNECT: 
+                            print "Group Disconnect Packet"
+                        elif opcode == Config.PACKET_SCAN:
+                            print "Network Scan Packet"
+                            # Throw away packet
+                            # TODO: Send network list
+                            # 1. Is this user in a group?
+                            # if no then:
+                            # Create a new packet with opcode scan
+                            # else:
+
+                            # Send packet a PACKET_SCAN_COMPLETE
+                        elif opcode == Config.PACKET_CHAT:
+                            print "Text Chat Packet"
+                        else:
+                            print "Invalid Packet opcode: {}".format(opcode)
+                            break
+                    else:
+                        # TODO: We received a disconnect or something went wrong.
+                        # TODO: Log out the user.
+                        print "Error occurred while receiving the packet."
+                        break
     finally:
         connection.close()
 
